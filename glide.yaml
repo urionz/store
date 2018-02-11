@@ -1,0 +1,9 @@
+package: github.com/urionz/store
+import:
+- package: gin-graphql-blog/store/driver
+- package: github.com/go-redis/redis
+  version: ^6.8.3
+- package: github.com/jinzhu/gorm
+  version: ^1.0.0
+- package: github.com/patrickmn/go-cache
+  version: ^2.1.0
