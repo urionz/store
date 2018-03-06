@@ -12,10 +12,9 @@ type MemoryStore struct {
 	cleanupInterval time.Duration
 }
 
-func NewMemoryStore(cleanupInterval time.Duration, instance interface{}) *MemoryStore {
+func NewMemoryStore(instance *cache.Cache) *MemoryStore {
 	return &MemoryStore{
-		instance:        instance.(*cache.Cache),
-		cleanupInterval: cleanupInterval,
+		instance: instance,
 	}
 }
 

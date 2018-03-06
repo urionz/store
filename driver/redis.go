@@ -10,9 +10,9 @@ type RedisStore struct {
 	instance *redis.Client
 }
 
-func NewRedisStore(instance interface{}) *RedisStore {
+func NewRedisStore(instance *redis.Client) *RedisStore {
 	return &RedisStore{
-		instance: instance.(*redis.Client),
+		instance: instance,
 	}
 }
 

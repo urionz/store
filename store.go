@@ -3,6 +3,8 @@ package store
 import (
 	"time"
 
+	"github.com/go-redis/redis"
+	"github.com/patrickmn/go-cache"
 	"github.com/urionz/store/driver"
 )
 
@@ -10,11 +12,13 @@ const (
 	// 默认存储时间为1小时
 	DefaultExpiration = time.Hour
 	// 默认清理任务周期为1小时
-	DefaultCleanupInterval = time.Second
+	DefaultCleanupInterval = time.Hour
 	// map存储类型
 	TypeMemory = "memory"
 	// redis存储类型
-	TypeRedis = "redis"
+	TypeRedis     = "redis"
+	DefaultPrefix = "cache_"
+	DefaultAddr   = "localhost:6379"
 )
 
 type Store interface {
@@ -39,21 +43,25 @@ type Store interface {
 }
 
 type Container struct {
-	driver     Store
-	prefix     string
-	expiration time.Duration
+	Driver          Store
+	Prefix          string
+	Expiration      time.Duration
+	CleanupInterval time.Duration
+	Addr            string
+	DB              int
+	Password        string
 }
 
 func (container *Container) GetStorage() Store {
-	return container.driver
+	return container.Driver
 }
 
 func (container *Container) Get(key string) interface{} {
-	return container.driver.Get(container.getPrefixKey(key))
+	return container.Driver.Get(container.getPrefixKey(key))
 }
 
 func (container *Container) GetScan(key string, scanner interface{}) error {
-	return container.driver.GetScan(container.getPrefixKey(key), scanner)
+	return container.Driver.GetScan(container.getPrefixKey(key), scanner)
 }
 
 func (container *Container) GetDefault(key string, def interface{}) interface{} {
@@ -83,11 +91,11 @@ func (container *Container) Many(keys []string) map[string]interface{} {
 }
 
 func (container *Container) Put(key string, value interface{}, expiration time.Duration) bool {
-	return container.driver.Put(container.getPrefixKey(key), value, expiration)
+	return container.Driver.Put(container.getPrefixKey(key), value, expiration)
 }
 
 func (container *Container) PutDefault(key string, value interface{}) bool {
-	return container.Put(key, value, container.expiration)
+	return container.Put(key, value, container.Expiration)
 }
 
 func (container *Container) PutMany(kv map[string]interface{}, expiration time.Duration) bool {
@@ -102,7 +110,7 @@ func (container *Container) PutMany(kv map[string]interface{}, expiration time.D
 }
 
 func (container *Container) PutManyDefault(kv map[string]interface{}) bool {
-	return container.PutMany(kv, container.expiration)
+	return container.PutMany(kv, container.Expiration)
 }
 
 func (container *Container) Add(key string, value interface{}, expiration time.Duration) bool {
@@ -113,61 +121,73 @@ func (container *Container) Add(key string, value interface{}, expiration time.D
 }
 
 func (container *Container) AddDefault(key string, value interface{}) bool {
-	return container.Add(key, value, container.expiration)
+	return container.Add(key, value, container.Expiration)
 }
 
 func (container *Container) Increment(key string, step int64) error {
-	return container.driver.Increment(container.getPrefixKey(key), step)
+	return container.Driver.Increment(container.getPrefixKey(key), step)
 }
 
 func (container *Container) Decrement(key string, step int64) error {
-	return container.driver.Decrement(container.getPrefixKey(key), step)
+	return container.Driver.Decrement(container.getPrefixKey(key), step)
 }
 
 func (container *Container) Forever(key, value string) bool {
-	return container.driver.Forever(container.getPrefixKey(key), value)
+	return container.Driver.Forever(container.getPrefixKey(key), value)
 }
 
 func (container *Container) Forget(key string) bool {
-	return container.driver.Forget(container.getPrefixKey(key))
+	return container.Driver.Forget(container.getPrefixKey(key))
 }
 
 func (container *Container) Has(key string) bool {
-	return container.driver.Has(container.getPrefixKey(key))
+	return container.Driver.Has(container.getPrefixKey(key))
 }
 
 func (container *Container) Flush() bool {
-	return container.driver.Flush()
+	return container.Driver.Flush()
 }
 
 func (container *Container) GetPrefix() string {
-	return container.prefix
+	return container.Prefix
 }
 
 func (container *Container) getPrefixKey(key string) string {
-	return container.prefix + key
+	return container.Prefix + key
 }
 
 // 通过存储类型创建存储实例
-func New(storeType string, expiration, cleanupInterval time.Duration, instance interface{}) Store {
+func New(storeType string, container Container) *Container {
+	if container.Prefix == "" {
+		container.Prefix = DefaultPrefix
+	}
 	switch storeType {
 	case TypeMemory:
-		return &Container{
-			driver:     driver.NewMemoryStore(cleanupInterval, instance),
-			prefix:     "memory_",
-			expiration: expiration,
+		if container.Expiration == 0 {
+			container.Expiration = DefaultExpiration
+		}
+		if container.CleanupInterval == 0 {
+			container.CleanupInterval = DefaultCleanupInterval
+		}
+		if container.Driver == nil {
+			container.Driver = driver.NewMemoryStore(cache.New(container.Expiration, container.CleanupInterval))
 		}
 	case TypeRedis:
-		return &Container{
-			driver:     driver.NewRedisStore(instance),
-			prefix:     "redis_",
-			expiration: expiration,
+		if container.Addr == "" {
+			container.Addr = DefaultAddr
+		}
+		if container.Driver == nil {
+			container.Driver = driver.NewRedisStore(redis.NewClient(&redis.Options{
+				Addr:     container.Addr,
+				Password: container.Password,
+				DB:       container.DB,
+			}))
 		}
 	}
-	return nil
+	return &container
 }
 
 // 创建存储实例通过默认设置
-func NewDefault(instance interface{}) Store {
-	return New(TypeRedis, DefaultExpiration, DefaultCleanupInterval, instance)
-}
+//func NewDefault(instance interface{}) Store {
+//	return New(TypeRedis, DefaultExpiration, DefaultCleanupInterval, instance)
+//}
